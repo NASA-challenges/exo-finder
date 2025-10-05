@@ -163,12 +163,3 @@ git checkout -b feature/my-change
 
 This repository includes a `LICENSE` file; please review it for licensing details.
 
-----
-
-If you want, I can also:
-
-- generate a `requirements.txt` from the current environment,
-- run the backend locally and share the startup output,
-- or commit this README change and prepare a short changelog entry.
-
-Tell me which of those (if any) you'd like next.
