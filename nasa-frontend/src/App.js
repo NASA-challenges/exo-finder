@@ -8,125 +8,159 @@ import './App.css';
 const StarSystem3D = ({ system }) => {
   const canvasRef = useRef(null);
   const animationRef = useRef(null);
+  const rendererRef = useRef(null);
 
   useEffect(() => {
-    if (!canvasRef.current) return;
+    // Validate canvas element exists
+    if (!canvasRef.current) {
+      console.warn('Canvas ref not ready');
+      return;
+    }
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x000814);
+    // Validate canvas dimensions
+    const canvas = canvasRef.current;
+    const width = canvas.clientWidth || 500;
+    const height = canvas.clientHeight || 400;
 
-    const camera = new THREE.PerspectiveCamera(
-      75,
-      canvasRef.current.clientWidth / canvasRef.current.clientHeight,
-      0.001,
-      1000
-    );
-    
-    // Adjust camera based on system size
-    const maxDist = Math.max(...system.planets.map(p => p.distance));
-    camera.position.z = maxDist * 3;
+    if (width === 0 || height === 0) {
+      console.warn('Canvas has zero dimensions');
+      return;
+    }
 
-    const renderer = new THREE.WebGLRenderer({ 
-      canvas: canvasRef.current,
-      antialias: true 
-    });
-    renderer.setSize(canvasRef.current.clientWidth, canvasRef.current.clientHeight);
+    let scene, camera, renderer;
 
-    // Star (sun) - size based on temperature
-    const starSize = system.star_temp > 5000 ? 0.03 : 0.02;
-    const starColor = system.star_temp > 5000 ? 0xffd700 : 0xff6b35;
-    
-    const starGeometry = new THREE.SphereGeometry(starSize, 32, 32);
-    const starMaterial = new THREE.MeshBasicMaterial({ color: starColor });
-    const star = new THREE.Mesh(starGeometry, starMaterial);
-    scene.add(star);
+    try {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x000814);
 
-    // Star glow
-    const glowGeometry = new THREE.SphereGeometry(starSize * 1.3, 32, 32);
-    const glowMaterial = new THREE.MeshBasicMaterial({ 
-      color: starColor,
-      transparent: true,
-      opacity: 0.3
-    });
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-    scene.add(glow);
-
-    // Planets and orbits
-    const planets = system.planets.map(planet => {
-      // Orbit ring
-      const orbitGeometry = new THREE.RingGeometry(
-        planet.distance * 0.99, 
-        planet.distance * 1.01, 
-        128
+      camera = new THREE.PerspectiveCamera(
+        75,
+        width / height,
+        0.001,
+        1000
       );
-      const orbitMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0x4a5568,
-        side: THREE.DoubleSide,
+      
+      // Adjust camera based on system size
+      const maxDist = Math.max(...system.planets.map(p => p.distance));
+      camera.position.z = maxDist * 3;
+
+      // Create renderer with error handling
+      renderer = new THREE.WebGLRenderer({ 
+        canvas: canvas,
+        antialias: true,
+        alpha: false,
+        powerPreference: 'high-performance'
+      });
+      
+      rendererRef.current = renderer;
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+      // Star (sun) - size based on temperature
+      const starSize = system.star_temp > 5000 ? 0.03 : 0.02;
+      const starColor = system.star_temp > 5000 ? 0xffd700 : 0xff6b35;
+      
+      const starGeometry = new THREE.SphereGeometry(starSize, 32, 32);
+      const starMaterial = new THREE.MeshBasicMaterial({ color: starColor });
+      const star = new THREE.Mesh(starGeometry, starMaterial);
+      scene.add(star);
+
+      // Star glow
+      const glowGeometry = new THREE.SphereGeometry(starSize * 1.3, 32, 32);
+      const glowMaterial = new THREE.MeshBasicMaterial({ 
+        color: starColor,
         transparent: true,
         opacity: 0.3
       });
-      const orbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
-      orbit.rotation.x = Math.PI / 2;
-      scene.add(orbit);
+      const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+      scene.add(glow);
 
-      // Planet - size relative to Earth
-      const planetSize = planet.size * 0.005;
-      const planetGeometry = new THREE.SphereGeometry(planetSize, 32, 32);
-      const planetMaterial = new THREE.MeshBasicMaterial({ color: planet.color });
-      const planetMesh = new THREE.Mesh(planetGeometry, planetMaterial);
-      scene.add(planetMesh);
+      // Planets and orbits
+      const planets = system.planets.map(planet => {
+        // Orbit ring
+        const orbitGeometry = new THREE.RingGeometry(
+          planet.distance * 0.99, 
+          planet.distance * 1.01, 
+          128
+        );
+        const orbitMaterial = new THREE.MeshBasicMaterial({ 
+          color: 0x4a5568,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.3
+        });
+        const orbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
+        orbit.rotation.x = Math.PI / 2;
+        scene.add(orbit);
 
-      return {
-        mesh: planetMesh,
-        distance: planet.distance,
-        speed: 0.3 / Math.sqrt(planet.distance),
-        angle: Math.random() * Math.PI * 2,
-        name: planet.name
-      };
-    });
+        // Planet - size relative to Earth
+        const planetSize = planet.size * 0.005;
+        const planetGeometry = new THREE.SphereGeometry(planetSize, 32, 32);
+        const planetMaterial = new THREE.MeshBasicMaterial({ color: planet.color });
+        const planetMesh = new THREE.Mesh(planetGeometry, planetMaterial);
+        scene.add(planetMesh);
 
-    // Animation
-    let time = 0;
-    const animate = () => {
-      animationRef.current = requestAnimationFrame(animate);
-      time += 0.005;
-
-      // Rotate planets with Kepler's laws
-      planets.forEach(planet => {
-        planet.angle += planet.speed * 0.01;
-        planet.mesh.position.x = Math.cos(planet.angle) * planet.distance;
-        planet.mesh.position.z = Math.sin(planet.angle) * planet.distance;
+        return {
+          mesh: planetMesh,
+          distance: planet.distance,
+          speed: 0.3 / Math.sqrt(planet.distance),
+          angle: Math.random() * Math.PI * 2,
+          name: planet.name
+        };
       });
 
-      // Slowly rotate camera view
-      camera.position.x = Math.sin(time * 0.1) * maxDist * 2;
-      camera.position.y = Math.sin(time * 0.15) * maxDist * 0.5;
-      camera.lookAt(0, 0, 0);
+      // Animation
+      let time = 0;
+      const animate = () => {
+        animationRef.current = requestAnimationFrame(animate);
+        time += 0.005;
 
-      renderer.render(scene, camera);
-    };
-    animate();
+        // Rotate planets with Kepler's laws
+        planets.forEach(planet => {
+          planet.angle += planet.speed * 0.01;
+          planet.mesh.position.x = Math.cos(planet.angle) * planet.distance;
+          planet.mesh.position.z = Math.sin(planet.angle) * planet.distance;
+        });
+
+        // Slowly rotate camera view
+        camera.position.x = Math.sin(time * 0.1) * maxDist * 2;
+        camera.position.y = Math.sin(time * 0.15) * maxDist * 0.5;
+        camera.lookAt(0, 0, 0);
+
+        renderer.render(scene, camera);
+      };
+      animate();
+
+    } catch (error) {
+      console.error('Error initializing 3D visualization:', error);
+      // Optionally show error message to user
+      return;
+    }
 
     // Cleanup
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
-      renderer.dispose();
+      if (rendererRef.current) {
+        rendererRef.current.dispose();
+      }
     };
   }, [system]);
 
   return (
-    <canvas 
-      ref={canvasRef} 
-      className="star-system-canvas"
-      style={{ 
-        width: '100%', 
-        height: '400px',
-        borderRadius: '8px',
-        background: 'linear-gradient(to bottom, #000814, #001d3d)' 
-      }}
-    />
+    <div style={{ position: 'relative', width: '100%', height: '400px' }}>
+      <canvas 
+        ref={canvasRef} 
+        className="star-system-canvas"
+        style={{ 
+          width: '100%', 
+          height: '400px',
+          borderRadius: '8px',
+          background: 'linear-gradient(to bottom, #000814, #001d3d)' 
+        }}
+      />
+    </div>
   );
 };
 
