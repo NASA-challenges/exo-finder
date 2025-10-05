@@ -35,7 +35,13 @@ def home():
         "message": "Ready to receive predictions from React frontend.",
         "endpoints": {
             "prediction": ["/predict", "/batch_predict"],
-            "nasa_data": ["/api/exoplanets/kepler", "/api/exoplanets/tess", "/api/exoplanets/k2", "/api/exoplanets/summary"],
+            "nasa_data": [
+                "/api/exoplanets/kepler", 
+                "/api/exoplanets/tess", 
+                "/api/exoplanets/k2", 
+                "/api/exoplanets/summary",
+                "/api/exoplanets/multi-planet-systems"
+            ],
             "utility": ["/api/health"]
         }
     })
@@ -349,6 +355,153 @@ def get_summary():
     
     except Exception as e:
         print(f"❌ Error generating summary: {e}")
+        return jsonify({'error': str(e)}), 500
+
+def assign_planet_color(radius):
+    """Assign color based on planet size (Earth radii)"""
+    if radius < 1.25:
+        return '#e74c3c'  # Rocky planets (red)
+    elif radius < 2.0:
+        return '#3498db'  # Super-Earth (blue)
+    elif radius < 6.0:
+        return '#9b59b6'  # Neptune-like (purple)
+    elif radius < 12.0:
+        return '#f39c12'  # Jupiter-like (orange)
+    else:
+        return '#1abc9c'  # Large gas giant (teal)
+
+@app.route('/api/exoplanets/multi-planet-systems')
+def get_multi_planet_systems():
+    """Find multi-planet systems from Kepler and K2 CSV data"""
+    try:
+        systems = []
+        
+        # Process Kepler data
+        try:
+            kepler = pd.read_csv(os.path.join(DATA_DIR, 'kepler_koi.csv'), comment='#', low_memory=False)
+            kepler_confirmed = kepler[
+                kepler['koi_disposition'].str.contains('CONFIRMED', na=False, case=False)
+            ].copy()
+            
+            # Group by star (extract star ID from KOI name like K00001 from K00001.01)
+            star_groups = {}
+            for _, row in kepler_confirmed.iterrows():
+                kepoi_name = row.get('kepoi_name')
+                if pd.notna(kepoi_name) and isinstance(kepoi_name, str) and '.' in kepoi_name:
+                    star_id = kepoi_name.split('.')[0]
+                    if star_id not in star_groups:
+                        star_groups[star_id] = []
+                    star_groups[star_id].append(row)
+            
+            # Build multi-planet systems
+            for star_id, planets_data in star_groups.items():
+                if len(planets_data) >= 2:  # Multi-planet system
+                    planets = []
+                    first_planet = planets_data[0]
+                    
+                    # Get system name
+                    kepler_name = first_planet.get('kepler_name')
+                    if pd.notna(kepler_name) and isinstance(kepler_name, str) and ' ' in kepler_name:
+                        system_name = kepler_name.rsplit(' ', 1)[0]
+                    else:
+                        system_name = star_id
+                    
+                    for planet in planets_data:
+                        period = safe_float(planet.get('koi_period'))
+                        radius = safe_float(planet.get('koi_prad'))
+                        sma = safe_float(planet.get('koi_sma'))  # Semi-major axis in AU
+                        
+                        if period and radius and sma:
+                            # Normalize distance for visualization
+                            distance = sma * 215  # Scale for visualization
+                            
+                            kepoi_name = planet.get('kepoi_name', '')
+                            planet_letter = kepoi_name.split('.')[-1] if '.' in str(kepoi_name) else str(len(planets) + 1)
+                            
+                            planets.append({
+                                'name': planet_letter,
+                                'distance': distance,
+                                'size': radius,
+                                'period': period,
+                                'mass': None,
+                                'color': assign_planet_color(radius)
+                            })
+                    
+                    if len(planets) >= 2:
+                        systems.append({
+                            'name': system_name,
+                            'star_temp': safe_float(first_planet.get('koi_steff')) or 5778,
+                            'star_radius': safe_float(first_planet.get('koi_srad')) or 1.0,
+                            'planet_count': len(planets),
+                            'planets': sorted(planets, key=lambda p: p['distance'])[:8],  # Max 8 planets
+                            'mission': 'Kepler'
+                        })
+        except FileNotFoundError:
+            print("⚠️ Kepler CSV not found for multi-planet systems")
+        except Exception as e:
+            print(f"⚠️ Error processing Kepler data: {e}")
+        
+        # Process K2 data
+        try:
+            k2 = pd.read_csv(os.path.join(DATA_DIR, 'k2_candidates.csv'), comment='#', low_memory=False)
+            k2_confirmed = k2[
+                k2['disposition'].str.contains('CONFIRMED', na=False, case=False)
+            ].copy()
+            
+            # Group by hostname
+            if 'hostname' in k2_confirmed.columns:
+                for hostname in k2_confirmed['hostname'].dropna().unique():
+                    star_planets = k2_confirmed[k2_confirmed['hostname'] == hostname]
+                    
+                    if len(star_planets) >= 2:
+                        planets = []
+                        
+                        for _, planet in star_planets.iterrows():
+                            period = safe_float(planet.get('pl_orbper'))
+                            radius = safe_float(planet.get('pl_rade'))
+                            sma = safe_float(planet.get('pl_orbsmax'))
+                            
+                            if period and radius and sma:
+                                distance = sma * 215
+                                letter = planet.get('pl_letter', str(len(planets) + 1))
+                                
+                                planets.append({
+                                    'name': letter if letter else str(len(planets) + 1),
+                                    'distance': distance,
+                                    'size': radius,
+                                    'period': period,
+                                    'mass': safe_float(planet.get('pl_masse')),
+                                    'color': assign_planet_color(radius)
+                                })
+                        
+                        if len(planets) >= 2:
+                            systems.append({
+                                'name': hostname,
+                                'star_temp': safe_float(star_planets.iloc[0].get('st_teff')) or 5778,
+                                'star_radius': safe_float(star_planets.iloc[0].get('st_rad')) or 1.0,
+                                'planet_count': len(planets),
+                                'planets': sorted(planets, key=lambda p: p['distance'])[:8],
+                                'mission': 'K2'
+                            })
+        except FileNotFoundError:
+            print("⚠️ K2 CSV not found for multi-planet systems")
+        except Exception as e:
+            print(f"⚠️ Error processing K2 data: {e}")
+        
+        # Remove duplicates and sort by planet count
+        unique_systems = {sys['name']: sys for sys in systems}
+        sorted_systems = sorted(
+            unique_systems.values(), 
+            key=lambda s: s['planet_count'], 
+            reverse=True
+        )
+        
+        # Return top 20 systems
+        print(f"✅ Found {len(sorted_systems)} multi-planet systems")
+        return jsonify(sorted_systems[:20])
+    
+    except Exception as e:
+        print(f"❌ Error in multi-planet systems endpoint: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/health', methods=['GET'])

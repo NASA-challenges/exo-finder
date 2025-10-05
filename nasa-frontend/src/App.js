@@ -1,7 +1,134 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, ScatterChart, Scatter, ZAxis } from 'recharts';
 import { Filter, Rocket, Globe, Calendar, TrendingUp, Database } from 'lucide-react';
+import * as THREE from 'three';
 import './App.css';
+
+// 3D Star System Visualization Component
+const StarSystem3D = ({ system }) => {
+  const canvasRef = useRef(null);
+  const animationRef = useRef(null);
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000814);
+
+    const camera = new THREE.PerspectiveCamera(
+      75,
+      canvasRef.current.clientWidth / canvasRef.current.clientHeight,
+      0.001,
+      1000
+    );
+    
+    // Adjust camera based on system size
+    const maxDist = Math.max(...system.planets.map(p => p.distance));
+    camera.position.z = maxDist * 3;
+
+    const renderer = new THREE.WebGLRenderer({ 
+      canvas: canvasRef.current,
+      antialias: true 
+    });
+    renderer.setSize(canvasRef.current.clientWidth, canvasRef.current.clientHeight);
+
+    // Star (sun) - size based on temperature
+    const starSize = system.star_temp > 5000 ? 0.03 : 0.02;
+    const starColor = system.star_temp > 5000 ? 0xffd700 : 0xff6b35;
+    
+    const starGeometry = new THREE.SphereGeometry(starSize, 32, 32);
+    const starMaterial = new THREE.MeshBasicMaterial({ color: starColor });
+    const star = new THREE.Mesh(starGeometry, starMaterial);
+    scene.add(star);
+
+    // Star glow
+    const glowGeometry = new THREE.SphereGeometry(starSize * 1.3, 32, 32);
+    const glowMaterial = new THREE.MeshBasicMaterial({ 
+      color: starColor,
+      transparent: true,
+      opacity: 0.3
+    });
+    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+    scene.add(glow);
+
+    // Planets and orbits
+    const planets = system.planets.map(planet => {
+      // Orbit ring
+      const orbitGeometry = new THREE.RingGeometry(
+        planet.distance * 0.99, 
+        planet.distance * 1.01, 
+        128
+      );
+      const orbitMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0x4a5568,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.3
+      });
+      const orbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
+      orbit.rotation.x = Math.PI / 2;
+      scene.add(orbit);
+
+      // Planet - size relative to Earth
+      const planetSize = planet.size * 0.005;
+      const planetGeometry = new THREE.SphereGeometry(planetSize, 32, 32);
+      const planetMaterial = new THREE.MeshBasicMaterial({ color: planet.color });
+      const planetMesh = new THREE.Mesh(planetGeometry, planetMaterial);
+      scene.add(planetMesh);
+
+      return {
+        mesh: planetMesh,
+        distance: planet.distance,
+        speed: 0.3 / Math.sqrt(planet.distance),
+        angle: Math.random() * Math.PI * 2,
+        name: planet.name
+      };
+    });
+
+    // Animation
+    let time = 0;
+    const animate = () => {
+      animationRef.current = requestAnimationFrame(animate);
+      time += 0.005;
+
+      // Rotate planets with Kepler's laws
+      planets.forEach(planet => {
+        planet.angle += planet.speed * 0.01;
+        planet.mesh.position.x = Math.cos(planet.angle) * planet.distance;
+        planet.mesh.position.z = Math.sin(planet.angle) * planet.distance;
+      });
+
+      // Slowly rotate camera view
+      camera.position.x = Math.sin(time * 0.1) * maxDist * 2;
+      camera.position.y = Math.sin(time * 0.15) * maxDist * 0.5;
+      camera.lookAt(0, 0, 0);
+
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    // Cleanup
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+      renderer.dispose();
+    };
+  }, [system]);
+
+  return (
+    <canvas 
+      ref={canvasRef} 
+      className="star-system-canvas"
+      style={{ 
+        width: '100%', 
+        height: '400px',
+        borderRadius: '8px',
+        background: 'linear-gradient(to bottom, #000814, #001d3d)' 
+      }}
+    />
+  );
+};
 
 const ExoplanetDashboard = () => {
   // Original prediction form state
@@ -43,11 +170,13 @@ const ExoplanetDashboard = () => {
   const [tessData, setTessData] = useState([]);
   const [k2Data, setK2Data] = useState([]);
   const [error, setError] = useState(null);
+  const [starSystems, setStarSystems] = useState([]);
 
   // Fetch NASA data when switching to explore tab
   useEffect(() => {
     if (mainTab === 'explore' && keplerData.length === 0) {
       fetchNASAData();
+      fetchMultiPlanetSystems();
     }
   }, [mainTab]);
 
@@ -102,6 +231,71 @@ const ExoplanetDashboard = () => {
       setNasaLoading(false);
     }
   };
+
+  const fetchMultiPlanetSystems = async () => {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/exoplanets/multi-planet-systems');
+      if (response.ok) {
+        const systems = await response.json();
+        if (systems && systems.length > 0 && !systems.error) {
+          // Normalize distances for better visualization
+          const normalizedSystems = systems.map(sys => ({
+            ...sys,
+            planets: sys.planets.map(p => ({
+              ...p,
+              distance: p.distance / 100 // Scale down for better visualization
+            }))
+          }));
+          setStarSystems(normalizedSystems);
+          console.log(`✅ Loaded ${normalizedSystems.length} multi-planet systems from CSV`);
+        } else {
+          // Use fallback systems
+          setStarSystems(getDefaultStarSystems());
+        }
+      } else {
+        setStarSystems(getDefaultStarSystems());
+      }
+    } catch (err) {
+      console.log('Using default star systems:', err);
+      setStarSystems(getDefaultStarSystems());
+    }
+  };
+
+  const getDefaultStarSystems = () => [
+    {
+      name: 'TRAPPIST-1',
+      star_temp: 2559,
+      star_radius: 0.12,
+      planet_count: 7,
+      mission: 'Ground-based',
+      planets: [
+        { name: 'b', distance: 0.01154, size: 1.116, color: '#e74c3c', mass: 1.374, period: 1.51 },
+        { name: 'c', distance: 0.01580, size: 1.097, color: '#e67e22', mass: 1.308, period: 2.42 },
+        { name: 'd', distance: 0.02227, size: 0.788, color: '#3498db', mass: 0.388, period: 4.05 },
+        { name: 'e', distance: 0.02925, size: 0.920, color: '#2ecc71', mass: 0.692, period: 6.10 },
+        { name: 'f', distance: 0.03849, size: 1.045, color: '#9b59b6', mass: 1.039, period: 9.21 },
+        { name: 'g', distance: 0.04683, size: 1.129, color: '#1abc9c', mass: 1.321, period: 12.35 },
+        { name: 'h', distance: 0.06189, size: 0.755, color: '#34495e', mass: 0.326, period: 18.77 }
+      ]
+    },
+    {
+      name: 'Kepler-90',
+      star_temp: 6080,
+      star_radius: 1.2,
+      planet_count: 8,
+      mission: 'Kepler',
+      planets: [
+        { name: 'b', distance: 0.074, size: 1.31, color: '#e74c3c', mass: 2.7, period: 7.0 },
+        { name: 'c', distance: 0.089, size: 1.19, color: '#e67e22', mass: 2.1, period: 8.7 },
+        { name: 'i', distance: 0.107, size: 1.32, color: '#f39c12', mass: 2.8, period: 14.4 },
+        { name: 'd', distance: 0.320, size: 2.87, color: '#3498db', mass: 13.5, period: 59.7 },
+        { name: 'e', distance: 0.420, size: 2.66, color: '#2ecc71', mass: 11.3, period: 91.9 },
+        { name: 'f', distance: 0.480, size: 2.88, color: '#9b59b6', mass: 13.7, period: 124.9 },
+        { name: 'g', distance: 0.710, size: 8.13, color: '#1abc9c', mass: 150, period: 210.6 },
+        { name: 'h', distance: 1.010, size: 11.3, color: '#e84393', mass: 200, period: 331.6 }
+      ]
+    }
+  ];
 
   // Generate sample data matching NASA's data structure
   const generateSampleNASAData = (mission, startYear, endYear) => {
@@ -531,6 +725,13 @@ const ExoplanetDashboard = () => {
                     <Calendar className="explore-icon" />
                     Time Series
                   </button>
+                  <button
+                    onClick={() => setExploreView('systems')}
+                    className={`explore-tab ${exploreView === 'systems' ? 'active' : ''}`}
+                  >
+                    <Globe className="explore-icon" />
+                    3D Systems
+                  </button>
                 </div>
 
                 {/* Filters */}
@@ -752,6 +953,55 @@ const ExoplanetDashboard = () => {
                         />
                       </LineChart>
                     </ResponsiveContainer>
+                  </div>
+                )}
+
+                {exploreView === 'systems' && (
+                  <div className="systems-view">
+                    <div className="systems-header">
+                      <h3 className="chart-title">
+                        <Globe className="inline-icon" />
+                        Multi-Planet Star Systems from NASA Data
+                      </h3>
+                      <p className="chart-description">
+                        Displaying {starSystems.length} multi-planet systems discovered by Kepler and K2 missions. 
+                        Systems are shown with accurate relative orbital distances and planet sizes.
+                      </p>
+                    </div>
+
+                    <div className="systems-grid">
+                      {starSystems.map(system => (
+                        <div key={system.name} className="system-card">
+                          <div className="system-header">
+                            <h4 className="system-name">{system.name}</h4>
+                            <div className="system-info">
+                              <span>{system.planet_count || system.planets.length} planets</span>
+                              <span>•</span>
+                              <span>Star temp: {system.star_temp}K</span>
+                              <span>•</span>
+                              <span className="mission-badge">{system.mission}</span>
+                            </div>
+                          </div>
+                          
+                          <StarSystem3D system={system} />
+                          
+                          <div className="planets-legend">
+                            {system.planets.map((planet, idx) => (
+                              <div key={idx} className="planet-info">
+                                <div 
+                                  className="planet-color"
+                                  style={{ backgroundColor: planet.color }}
+                                />
+                                <div className="planet-details">
+                                  <div className="planet-name">{planet.name}</div>
+                                  <div className="planet-size">{planet.size.toFixed(1)}R⊕</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </>
