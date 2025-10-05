@@ -1,1 +1,1 @@
-# earthdata-to-action-tempo
+# Exo-Finder
