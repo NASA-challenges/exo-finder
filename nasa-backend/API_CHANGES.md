@@ -1,6 +1,6 @@
 # NASA Exoplanet API - CSV Integration Summary
 
-## ✅ Changes Made
+## Changes Made
 
 Successfully replaced external NASA TAP API calls with local CSV file-based data loading while preserving all original ML prediction functionality.
 
@@ -34,7 +34,7 @@ Successfully replaced external NASA TAP API calls with local CSV file-based data
 - **`/batch_predict`** - Batch prediction from uploaded CSV (ML model)
 - **`/`** - Home/status endpoint (updated to show new endpoints)
 
-## 📂 Required CSV Files
+## Required CSV Files
 
 The backend expects these CSV files in `nasa-backend/data/`:
 
@@ -43,14 +43,14 @@ nasa-backend/
 ├── app.py
 ├── requirements.txt
 └── data/
-    ├── kepler_koi.csv    ✅ Already present
-    ├── tess_toi.csv      ✅ Already present
-    └── k2_candidates.csv ✅ Already present
+  ├── kepler_koi.csv    Already present
+  ├── tess_toi.csv      Already present
+  └── k2_candidates.csv Already present
 ```
 
 All three CSV files are already in your `nasa-backend/data/` directory!
 
-## 🔧 CSV Data Format & Processing
+## CSV Data Format & Processing
 
 ### Kepler KOI Data (`kepler_koi.csv`)
 **Key columns used:**
@@ -103,7 +103,7 @@ All three CSV files are already in your `nasa-backend/data/` directory!
 - `st_teff` - Stellar temperature
 - `st_mass` - Stellar mass
 
-## 🚀 How to Run
+## How to Run
 
 ### 1. Install Dependencies
 ```powershell
@@ -129,11 +129,11 @@ python app.py
 
 You should see output like:
 ```
-🚀 Starting NASA Exoplanet Detection API...
-📂 Data directory: C:\Users\moldo\Documents\nasa\exo-finder\nasa-backend\data
-✅ Kepler data: Found
-✅ TESS data: Found
-✅ K2 data: Found
+Starting NASA Exoplanet Detection API...
+Data directory: C:\Users\moldo\Documents\nasa\exo-finder\nasa-backend\data
+Kepler data: Found
+TESS data: Found
+K2 data: Found
  * Running on http://127.0.0.1:5000
 ```
 
@@ -154,7 +154,7 @@ curl http://localhost:5000/api/exoplanets/kepler
 curl http://localhost:5000/api/exoplanets/summary
 ```
 
-## 🎨 Frontend Integration
+## Frontend Integration
 
 Your React frontend will automatically work with these endpoints. The URLs remain the same:
 
@@ -232,7 +232,7 @@ All endpoints return data in the same format, example:
 }
 ```
 
-## ⚡ Performance Benefits
+## Performance Benefits
 
 - **Faster:** No network latency, instant CSV reads
 - **Reliable:** No dependency on external API availability
@@ -240,7 +240,7 @@ All endpoints return data in the same format, example:
 - **Consistent:** Same data every time, no API changes
 - **Scalable:** Can handle many concurrent requests
 
-## 🛠️ Troubleshooting
+## Troubleshooting
 
 ### Issue: "File not found" error
 
@@ -263,7 +263,7 @@ pip install -r requirements.txt
 app.run(debug=True, port=5001)  # Use different port
 ```
 
-## 📝 Code Changes Summary
+## Code Changes Summary
 
 **Imports changed:**
 - Removed: `import requests`
@@ -280,7 +280,7 @@ app.run(debug=True, port=5001)  # Use different port
 - Descriptive error messages
 - Clear guidance for missing files
 
-## ✅ Testing Checklist
+## Testing Checklist
 
 - [x] Backend starts successfully
 - [x] CSV files are loaded correctly
@@ -294,14 +294,14 @@ app.run(debug=True, port=5001)  # Use different port
 - [ ] Frontend successfully fetches and displays data
 - [ ] Frontend falls back to sample data when backend is down
 
-## 🎯 Next Steps
+## Next Steps
 
 1. **Test the backend:** Run `python app.py` and test all endpoints
 2. **Update frontend:** Ensure React app points to `http://localhost:5000`
 3. **Test integration:** Run both backend and frontend together
 4. **Verify fallbacks:** Test that frontend handles missing data gracefully
 
-## 📞 Support
+## Support
 
 If you encounter issues:
 1. Check that all CSV files exist in `nasa-backend/data/`
@@ -313,4 +313,4 @@ If you encounter issues:
 
 **Last Updated:** January 2025
 **Backend Version:** 2.0 (CSV Integration)
-**Status:** ✅ Production Ready
+**Status:** Production Ready

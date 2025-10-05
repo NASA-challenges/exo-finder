@@ -41,4 +41,4 @@ upload_file(
     repo_type="model"
 )
 
-print(f"✅ All files uploaded to https://huggingface.co/{repo_id}")
+print(f"All files uploaded to https://huggingface.co/{repo_id}")

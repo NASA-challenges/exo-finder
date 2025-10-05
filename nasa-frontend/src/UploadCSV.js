@@ -15,12 +15,12 @@ function UploadCSV() {
   const handleUpload = async (e) => {
     e.preventDefault();
     if (!file) {
-      setMessage("⚠️ Please select a CSV file first.");
+      setMessage("Please select a CSV file first.");
       return;
     }
 
     setLoading(true);
-    setMessage("🛰️ Uploading file to NASA model...");
+    setMessage("Uploading file to NASA model...");
 
     const formData = new FormData();
     formData.append("file", file);
@@ -39,9 +39,9 @@ function UploadCSV() {
       link.click();
       link.parentNode.removeChild(link);
 
-      setMessage("✅ File processed successfully! Downloading results...");
+      setMessage("File processed successfully. Downloading results...");
     } catch (error) {
-      setMessage("❌ Error: " + (error.response?.data?.error || error.message));
+      setMessage("Error: " + (error.response?.data?.error || error.message));
     } finally {
       setLoading(false);
     }
@@ -49,7 +49,7 @@ function UploadCSV() {
 
   return (
     <div className="upload-container">
-      <h2>📂 Batch Prediction Mode</h2>
+      <h2>Batch Prediction Mode</h2>
       <p>Upload your <b>Kepler Exoplanet CSV</b> file to predict all entries automatically.</p>
 
       <form onSubmit={handleUpload}>
@@ -60,7 +60,7 @@ function UploadCSV() {
           className="file-input"
         />
         <button type="submit" disabled={loading}>
-          {loading ? "Processing..." : "🚀 Upload & Predict"}
+          {loading ? "Processing..." : "Upload & Predict"}
         </button>
       </form>
 

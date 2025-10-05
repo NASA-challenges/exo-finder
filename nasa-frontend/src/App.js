@@ -228,12 +228,12 @@ const ExoplanetDashboard = () => {
 
   const handleUpload = async () => {
     if (!file) {
-      setUploadMessage("⚠️ Please select a CSV file first.");
+      setUploadMessage("Please select a CSV file first.");
       return;
     }
 
     setUploadLoading(true);
-    setUploadMessage("🛰️ Processing file...");
+    setUploadMessage("Processing file...");
 
     const formDataUpload = new FormData();
     formDataUpload.append("file", file);
@@ -253,9 +253,9 @@ const ExoplanetDashboard = () => {
       link.click();
       link.parentNode.removeChild(link);
 
-      setUploadMessage("✅ File processed successfully! Downloading results...");
+      setUploadMessage("File processed successfully. Downloading results...");
     } catch (error) {
-      setUploadMessage("❌ Error: " + error.message);
+      setUploadMessage("Error: " + error.message);
     } finally {
       setUploadLoading(false);
     }
@@ -301,9 +301,7 @@ const ExoplanetDashboard = () => {
       <div className="content-wrapper">
         <header className="header">
           <div className="header-content">
-            <span className="star-icon rotating">⭐</span>
             <h1 className="title">NASA Exoplanet Detection</h1>
-            <span className="star-icon rotating-reverse">🌟</span>
           </div>
           <p className="subtitle">Advanced Machine Learning Model for Kepler Mission Data</p>
         </header>
@@ -334,13 +332,13 @@ const ExoplanetDashboard = () => {
                 onClick={() => setPredictTab('single')}
                 className={`tab-button ${predictTab === 'single' ? 'active' : ''}`}
               >
-                🚀 Single Prediction
+                Single Prediction
               </button>
               <button
                 onClick={() => setPredictTab('batch')}
                 className={`tab-button ${predictTab === 'batch' ? 'active-batch' : ''}`}
               >
-                📂 Batch Processing
+                Batch Processing
               </button>
             </div>
 
@@ -393,7 +391,7 @@ const ExoplanetDashboard = () => {
                       disabled={loading}
                       className="submit-button"
                     >
-                      {loading ? '⏳ Analyzing...' : '🚀 Predict Exoplanet Status'}
+                      {loading ? 'Analyzing...' : 'Predict Exoplanet Status'}
                     </button>
                   </form>
                 </div>
@@ -402,12 +400,12 @@ const ExoplanetDashboard = () => {
                   <div className="result-card">
                     {result.error ? (
                       <div className="error-message">
-                        ⚠️ {result.error}
+                        {result.error}
                       </div>
                     ) : (
                       <div>
                         <div className="result-header">
-                          <span className="check-icon">✅</span>
+                          <span className="check-icon"></span>
                           <div>
                             <h3 className="result-label">Prediction Result:</h3>
                             <p className={`result-value ${result.label.toLowerCase()}`}>
@@ -450,7 +448,7 @@ const ExoplanetDashboard = () => {
                   </p>
 
                   <div className="upload-area">
-                    <div className="upload-icon">📂</div>
+                    <div className="upload-icon"></div>
                     <label className="file-label">
                       <input
                         type="file"
@@ -459,7 +457,7 @@ const ExoplanetDashboard = () => {
                         className="file-input"
                       />
                       <span className="file-text">
-                        {file ? `📄 ${file.name}` : 'Click to select CSV file'}
+                        {file ? `${file.name}` : 'Click to select CSV file'}
                       </span>
                     </label>
                   </div>
@@ -469,7 +467,7 @@ const ExoplanetDashboard = () => {
                     disabled={uploadLoading || !file}
                     className="upload-button"
                   >
-                    {uploadLoading ? '⏳ Processing...' : '🚀 Upload & Predict'}
+                    {uploadLoading ? 'Processing...' : 'Upload & Predict'}
                   </button>
 
                   {uploadMessage && (

@@ -14,7 +14,7 @@ CORS(app)
 # Data directory for CSV files
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 
-print("📡 Loading ML model and dependencies from Hugging Face...")
+print("Loading ML model and dependencies from Hugging Face...")
 
 repo_id = "mihaelaMelnic/kepler-exoplanet-model"
 
@@ -26,12 +26,12 @@ model = pickle.load(open(model_path, "rb"))
 scaler = pickle.load(open(scaler_path, "rb"))
 label_encoder = pickle.load(open(encoder_path, "rb"))
 
-print("✅ Model, scaler și encoder încărcate cu succes!")
+print("Model, scaler and encoder loaded successfully")
 
 @app.route("/")
 def home():
     return jsonify({
-        "status": "✅ Flask backend is running",
+        "status": "Flask backend is running",
         "message": "Ready to receive predictions from React frontend.",
         "endpoints": {
             "prediction": ["/predict", "/batch_predict"],
@@ -59,12 +59,12 @@ def predict():
         if not data:
             return jsonify({"error": "No JSON data received"}), 400
 
-        print("🔍 Received single prediction data:", data)
+        print("Received single prediction data:", data)
         prediction = make_prediction(data)
         return jsonify(prediction)
 
     except Exception as e:
-        print("❌ Error in /predict:", e)
+        print("Error in /predict:", e)
         return jsonify({"error": str(e)}), 400
 
 @app.route("/batch_predict", methods=["POST"])
@@ -101,7 +101,7 @@ def batch_predict():
         )
 
     except Exception as e:
-        print("❌ Error in /batch_predict:", e)
+        print("Error in /batch_predict:", e)
         return jsonify({"error": str(e)}), 400
 
 # Helper functions for CSV data processing
@@ -188,7 +188,7 @@ def get_kepler_data():
             'message': 'Please ensure kepler_koi.csv is in nasa-backend/data/'
         }), 404
     except Exception as e:
-        print(f"❌ Error loading Kepler data: {e}")
+        print(f"Error loading Kepler data: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/exoplanets/tess')
@@ -250,7 +250,7 @@ def get_tess_data():
             'message': 'Please ensure tess_toi.csv is in nasa-backend/data/'
         }), 404
     except Exception as e:
-        print(f"❌ Error loading TESS data: {e}")
+        print(f"Error loading TESS data: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/exoplanets/k2')
@@ -312,7 +312,7 @@ def get_k2_data():
             'message': 'Please ensure k2_candidates.csv is in nasa-backend/data/'
         }), 404
     except Exception as e:
-        print(f"❌ Error loading K2 data: {e}")
+        print(f"Error loading K2 data: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/exoplanets/summary', methods=['GET'])
@@ -348,7 +348,7 @@ def get_summary():
         return jsonify(summary)
     
     except Exception as e:
-        print(f"❌ Error generating summary: {e}")
+        print(f"Error generating summary: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/health', methods=['GET'])
@@ -365,9 +365,9 @@ def health_check():
     })
 
 if __name__ == "__main__":
-    print("🚀 Starting NASA Exoplanet Detection API...")
-    print(f"📂 Data directory: {DATA_DIR}")
-    print(f"✅ Kepler data: {'Found' if os.path.exists(os.path.join(DATA_DIR, 'kepler_koi.csv')) else 'Missing'}")
-    print(f"✅ TESS data: {'Found' if os.path.exists(os.path.join(DATA_DIR, 'tess_toi.csv')) else 'Missing'}")
-    print(f"✅ K2 data: {'Found' if os.path.exists(os.path.join(DATA_DIR, 'k2_candidates.csv')) else 'Missing'}")
+    print("Starting NASA Exoplanet Detection API...")
+    print(f"Data directory: {DATA_DIR}")
+    print(f"Kepler data: {'Found' if os.path.exists(os.path.join(DATA_DIR, 'kepler_koi.csv')) else 'Missing'}")
+    print(f"TESS data: {'Found' if os.path.exists(os.path.join(DATA_DIR, 'tess_toi.csv')) else 'Missing'}")
+    print(f"K2 data: {'Found' if os.path.exists(os.path.join(DATA_DIR, 'k2_candidates.csv')) else 'Missing'}")
     app.run(debug=True, port=5000)
