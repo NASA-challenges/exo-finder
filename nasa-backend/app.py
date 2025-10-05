@@ -5,12 +5,14 @@ import pickle
 from io import BytesIO
 from huggingface_hub import hf_hub_download
 from flask_cors import CORS
-import requests
+import os
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
 
-NASA_TAP_URL = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
+# Data directory for CSV files
+DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 
 print("📡 Loading ML model and dependencies from Hugging Face...")
 
@@ -31,7 +33,11 @@ def home():
     return jsonify({
         "status": "✅ Flask backend is running",
         "message": "Ready to receive predictions from React frontend.",
-        "endpoints": ["/predict", "/batch_predict", "/api/exoplanets/kepler", "/api/exoplanets/tess", "/api/exoplanets/k2"]
+        "endpoints": {
+            "prediction": ["/predict", "/batch_predict"],
+            "nasa_data": ["/api/exoplanets/kepler", "/api/exoplanets/tess", "/api/exoplanets/k2", "/api/exoplanets/summary"],
+            "utility": ["/api/health"]
+        }
     })
 
 def preprocess_input(data):
@@ -98,136 +104,270 @@ def batch_predict():
         print("❌ Error in /batch_predict:", e)
         return jsonify({"error": str(e)}), 400
 
+# Helper functions for CSV data processing
+def safe_float(value):
+    """Safely convert to float, return None if invalid"""
+    try:
+        if pd.isna(value):
+            return None
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+def extract_year_from_date(date_str):
+    """Extract year from various date formats"""
+    if pd.isna(date_str):
+        return None
+    try:
+        # Handle YYYY-MM-DD format
+        if isinstance(date_str, str) and '-' in date_str:
+            return int(date_str.split('-')[0])
+        # Handle timestamp
+        return int(str(date_str)[:4])
+    except:
+        return None
+
 @app.route('/api/exoplanets/kepler')
 def get_kepler_data():
-    """Fetch Kepler Objects of Interest (KOI) data from NASA TAP service"""
+    """Fetch Kepler KOI data from CSV"""
     try:
-        query = """
-        SELECT kepoi_name, koi_disposition, koi_period, koi_prad, 
-               koi_srad, koi_steff, koi_teq, ra, dec
-        FROM cumulative
-        WHERE koi_disposition IS NOT NULL
-        LIMIT 1000
-        """
-
-        params = {
-            'query': query,
-            'format': 'json'
-        }
-
-        response = requests.get(NASA_TAP_URL, params=params, timeout=10)
-        data = response.json()
-
+        # Read the CSV file
+        df = pd.read_csv(
+            os.path.join(DATA_DIR, 'kepler_koi.csv'),
+            comment='#',  # Skip comment lines starting with #
+            low_memory=False
+        )
+        
+        # Filter out rows with missing critical data
+        df = df[df['koi_disposition'].notna()]
+        
+        # Transform to match frontend format
         transformed = []
-        for row in data:
-            year = 2009 + (hash(row.get('kepoi_name', '')) % 10)
+        for _, row in df.iterrows():
+            # Extract discovery year from various date columns
+            year = extract_year_from_date(row.get('koi_vet_date'))
+            if not year:
+                # Fallback: estimate from KOI name or use default
+                year = 2011  # Kepler mission prime years
+            
+            # Normalize disposition names
+            disposition = str(row.get('koi_disposition', '')).upper()
+            if 'CONFIRMED' in disposition or disposition == 'CONFIRMED':
+                disposition = 'CONFIRMED'
+            elif 'CANDIDATE' in disposition or disposition == 'CANDIDATE':
+                disposition = 'CANDIDATE'
+            elif 'FALSE' in disposition or disposition == 'FALSE POSITIVE':
+                disposition = 'FALSE POSITIVE'
+            else:
+                disposition = 'CANDIDATE'
+            
             transformed.append({
                 'mission': 'Kepler',
-                'pl_name': row.get('kepoi_name'),
-                'disposition': row.get('koi_disposition'),
-                'pl_orbper': row.get('koi_period'),
-                'pl_rade': row.get('koi_prad'),
-                'st_rad': row.get('koi_srad'),
-                'st_teff': row.get('koi_steff'),
+                'pl_name': str(row.get('kepoi_name', '')),
+                'kepler_name': str(row.get('kepler_name', '')),
+                'disposition': disposition,
                 'discovery_year': year,
-                'pl_masse': None,
-                'sy_dist': None,
+                'pl_orbper': safe_float(row.get('koi_period')),
+                'pl_rade': safe_float(row.get('koi_prad')),
+                'st_rad': safe_float(row.get('koi_srad')),
+                'st_teff': safe_float(row.get('koi_steff')),
+                'st_mass': safe_float(row.get('koi_smass')),
+                'pl_insol': safe_float(row.get('koi_insol')),
+                'pl_eqt': safe_float(row.get('koi_teq')),
+                'ra': safe_float(row.get('ra')),
+                'dec': safe_float(row.get('dec')),
+                'koi_score': safe_float(row.get('koi_score')),
                 'disc_facility': 'Kepler'
             })
-
+        
         return jsonify(transformed)
-
+    
+    except FileNotFoundError:
+        return jsonify({
+            'error': 'Kepler data file not found',
+            'message': 'Please ensure kepler_koi.csv is in nasa-backend/data/'
+        }), 404
     except Exception as e:
-        print(f"❌ Error fetching Kepler data from NASA: {e}")
-        return jsonify({"error": "NASA TAP API unavailable", "message": str(e)}), 503
+        print(f"❌ Error loading Kepler data: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/exoplanets/tess')
 def get_tess_data():
-    """Fetch TESS Objects of Interest (TOI) data"""
+    """Fetch TESS TOI data from CSV"""
     try:
-        query = """
-        SELECT toi, tfopwg_disp, pl_orbper, pl_rade, 
-               st_rad, st_teff, ra, dec
-        FROM toi
-        WHERE tfopwg_disp IS NOT NULL
-        LIMIT 1000
-        """
-
-        params = {
-            'query': query,
-            'format': 'json'
-        }
-
-        response = requests.get(NASA_TAP_URL, params=params, timeout=10)
-        data = response.json()
-
+        df = pd.read_csv(
+            os.path.join(DATA_DIR, 'tess_toi.csv'),
+            comment='#',
+            low_memory=False
+        )
+        
+        # Filter out rows with missing critical data
+        df = df[df['tfopwg_disp'].notna()]
+        
         transformed = []
-        for row in data:
-            toi_num = row.get('toi', 0)
-            year = 2018 + (int(toi_num) // 1000) if toi_num else 2020
+        for _, row in df.iterrows():
+            # Extract year from TOI creation date
+            year = extract_year_from_date(row.get('toi_created'))
+            if not year:
+                year = 2019  # TESS started discovering in 2018-2019
+            
+            # Normalize disposition
+            disposition = str(row.get('tfopwg_disp', '')).upper()
+            if disposition == 'CP':
+                disposition = 'CONFIRMED'
+            elif disposition == 'PC':
+                disposition = 'CANDIDATE'
+            elif disposition == 'FP':
+                disposition = 'FALSE POSITIVE'
+            elif disposition == 'KP':
+                disposition = 'CONFIRMED'  # Known Planet
+            else:
+                disposition = 'CANDIDATE'
+            
             transformed.append({
                 'mission': 'TESS',
-                'pl_name': f"TOI-{row.get('toi')}",
-                'disposition': row.get('tfopwg_disp'),
-                'pl_orbper': row.get('pl_orbper'),
-                'pl_rade': row.get('pl_rade'),
-                'st_rad': row.get('st_rad'),
-                'st_teff': row.get('st_teff'),
+                'pl_name': f"TOI-{row.get('toi', '')}",
+                'disposition': disposition,
                 'discovery_year': year,
-                'pl_masse': None,
-                'sy_dist': None,
+                'pl_orbper': safe_float(row.get('pl_orbper')),
+                'pl_rade': safe_float(row.get('pl_rade')),
+                'st_rad': safe_float(row.get('st_rad')),
+                'st_teff': safe_float(row.get('st_teff')),
+                'st_dist': safe_float(row.get('st_dist')),
+                'pl_insol': safe_float(row.get('pl_insol')),
+                'pl_eqt': safe_float(row.get('pl_eqt')),
+                'ra': safe_float(row.get('ra')),
+                'dec': safe_float(row.get('dec')),
+                'toi': str(row.get('toi', '')),
                 'disc_facility': 'TESS'
             })
-
+        
         return jsonify(transformed)
-
+    
+    except FileNotFoundError:
+        return jsonify({
+            'error': 'TESS data file not found',
+            'message': 'Please ensure tess_toi.csv is in nasa-backend/data/'
+        }), 404
     except Exception as e:
-        print(f"❌ Error fetching TESS data from NASA: {e}")
-        return jsonify({"error": "NASA TAP API unavailable", "message": str(e)}), 503
+        print(f"❌ Error loading TESS data: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/exoplanets/k2')
 def get_k2_data():
-    """Fetch K2 Planets and Candidates data from NASA TAP service"""
+    """Fetch K2 Planets and Candidates data from CSV"""
     try:
-        query = """
-        SELECT epic_name, k2_disposition, pl_orbper, pl_rade,
-               st_rad, st_teff, ra, dec
-        FROM k2pandc
-        WHERE k2_disposition IS NOT NULL
-        LIMIT 500
-        """
-
-        params = {
-            'query': query,
-            'format': 'json'
-        }
-
-        response = requests.get(NASA_TAP_URL, params=params, timeout=10)
-        data = response.json()
-
+        df = pd.read_csv(
+            os.path.join(DATA_DIR, 'k2_candidates.csv'),
+            comment='#',
+            low_memory=False
+        )
+        
+        # Filter out rows with missing critical data
+        df = df[df['disposition'].notna()]
+        
         transformed = []
-        for row in data:
-            year = 2014 + (hash(row.get('epic_name', '')) % 5)
+        for _, row in df.iterrows():
+            # Extract year from discovery year column
+            year = safe_float(row.get('disc_year'))
+            if not year or pd.isna(year):
+                year = 2015  # K2 mission years
+            else:
+                year = int(year)
+            
+            # Normalize disposition
+            disposition = str(row.get('disposition', '')).upper()
+            if 'CONFIRMED' in disposition:
+                disposition = 'CONFIRMED'
+            elif 'CANDIDATE' in disposition:
+                disposition = 'CANDIDATE'
+            elif 'FALSE' in disposition:
+                disposition = 'FALSE POSITIVE'
+            else:
+                disposition = 'CANDIDATE'
+            
             transformed.append({
                 'mission': 'K2',
-                'pl_name': row.get('epic_name'),
-                'disposition': row.get('k2_disposition'),
-                'pl_orbper': row.get('pl_orbper'),
-                'pl_rade': row.get('pl_rade'),
-                'st_rad': row.get('st_rad'),
-                'st_teff': row.get('st_teff'),
+                'pl_name': str(row.get('pl_name', '')),
+                'k2_name': str(row.get('k2_name', '')),
+                'disposition': disposition,
                 'discovery_year': year,
-                'pl_masse': None,
-                'sy_dist': None,
+                'pl_orbper': safe_float(row.get('pl_orbper')),
+                'pl_rade': safe_float(row.get('pl_rade')),
+                'st_rad': safe_float(row.get('st_rad')),
+                'st_teff': safe_float(row.get('st_teff')),
+                'st_mass': safe_float(row.get('st_mass')),
+                'pl_insol': safe_float(row.get('pl_insol')),
+                'pl_eqt': safe_float(row.get('pl_eqt')),
+                'ra': safe_float(row.get('ra')),
+                'dec': safe_float(row.get('dec')),
                 'disc_facility': 'K2'
             })
-
+        
         return jsonify(transformed)
-
+    
+    except FileNotFoundError:
+        return jsonify({
+            'error': 'K2 data file not found',
+            'message': 'Please ensure k2_candidates.csv is in nasa-backend/data/'
+        }), 404
     except Exception as e:
-        print(f"❌ Error fetching K2 data from NASA: {e}")
-        return jsonify({"error": "NASA TAP API unavailable", "message": str(e)}), 503
+        print(f"❌ Error loading K2 data: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/exoplanets/summary', methods=['GET'])
+def get_summary():
+    """Get summary statistics across all missions"""
+    try:
+        # Load all data
+        kepler = pd.read_csv(os.path.join(DATA_DIR, 'kepler_koi.csv'), comment='#')
+        tess = pd.read_csv(os.path.join(DATA_DIR, 'tess_toi.csv'), comment='#')
+        k2 = pd.read_csv(os.path.join(DATA_DIR, 'k2_candidates.csv'), comment='#')
+        
+        summary = {
+            'kepler': {
+                'total': len(kepler),
+                'confirmed': len(kepler[kepler['koi_disposition'].str.contains('CONFIRMED', na=False, case=False)]),
+                'candidates': len(kepler[kepler['koi_disposition'].str.contains('CANDIDATE', na=False, case=False)]),
+                'false_positives': len(kepler[kepler['koi_disposition'].str.contains('FALSE', na=False, case=False)])
+            },
+            'tess': {
+                'total': len(tess),
+                'confirmed': len(tess[tess['tfopwg_disp'].isin(['CP', 'KP'])]),
+                'candidates': len(tess[tess['tfopwg_disp'] == 'PC']),
+                'false_positives': len(tess[tess['tfopwg_disp'] == 'FP'])
+            },
+            'k2': {
+                'total': len(k2),
+                'confirmed': len(k2[k2['disposition'].str.contains('CONFIRMED', na=False, case=False)]),
+                'candidates': len(k2[k2['disposition'].str.contains('CANDIDATE', na=False, case=False)]),
+                'false_positives': len(k2[k2['disposition'].str.contains('FALSE', na=False, case=False)])
+            }
+        }
+        
+        return jsonify(summary)
+    
+    except Exception as e:
+        print(f"❌ Error generating summary: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'data_files': {
+            'kepler': os.path.exists(os.path.join(DATA_DIR, 'kepler_koi.csv')),
+            'tess': os.path.exists(os.path.join(DATA_DIR, 'tess_toi.csv')),
+            'k2': os.path.exists(os.path.join(DATA_DIR, 'k2_candidates.csv'))
+        }
+    })
 
 if __name__ == "__main__":
     print("🚀 Starting NASA Exoplanet Detection API...")
+    print(f"📂 Data directory: {DATA_DIR}")
+    print(f"✅ Kepler data: {'Found' if os.path.exists(os.path.join(DATA_DIR, 'kepler_koi.csv')) else 'Missing'}")
+    print(f"✅ TESS data: {'Found' if os.path.exists(os.path.join(DATA_DIR, 'tess_toi.csv')) else 'Missing'}")
+    print(f"✅ K2 data: {'Found' if os.path.exists(os.path.join(DATA_DIR, 'k2_candidates.csv')) else 'Missing'}")
     app.run(debug=True, port=5000)
