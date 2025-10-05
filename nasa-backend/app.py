@@ -82,19 +82,18 @@ def batch_predict():
         file = request.files["file"]
         df = pd.read_csv(file)
 
-        # Selectăm doar coloanele numerice (caracteristici)
+        # Select only numeric columns
         features = df.select_dtypes(include=[np.number])
         scaled_features = scaler.transform(features)
         preds = model.predict(scaled_features)
         probs = model.predict_proba(scaled_features)
 
-        # Adăugăm rezultatele în fișier
+        # Add prediction results to the file
         df["Predicted_Label"] = label_encoder.inverse_transform(preds)
         df["CONFIRMED_Prob"] = probs[:, 0]
         df["CANDIDATE_Prob"] = probs[:, 1]
         df["FALSE_POSITIVE_Prob"] = probs[:, 2]
 
-        # Exportăm rezultatul într-un CSV temporar
         output = BytesIO()
         df.to_csv(output, index=False)
         output.seek(0)
@@ -110,9 +109,8 @@ def batch_predict():
         print("❌ Error in /batch_predict:", e)
         return jsonify({"error": str(e)}), 400
 
-# Helper functions for CSV data processing
+# Helper functions
 def safe_float(value):
-    """Safely convert to float, return None if invalid"""
     try:
         if pd.isna(value):
             return None
@@ -121,48 +119,40 @@ def safe_float(value):
         return None
 
 def extract_year_from_date(date_str):
-    """Extract year from various date formats"""
     if pd.isna(date_str):
         return None
     try:
-        # Handle YYYY-MM-DD format
         if isinstance(date_str, str) and '-' in date_str:
             return int(date_str.split('-')[0])
-        # Handle timestamp
         return int(str(date_str)[:4])
     except:
         return None
 
+def is_complete_planet(row, required_fields):
+    """Ignore rows that have missing critical fields"""
+    for field in required_fields:
+        if pd.isna(row.get(field)):
+            return False
+    return True
+
 @app.route('/api/exoplanets/kepler')
 def get_kepler_data():
-    """Fetch Kepler KOI data from CSV"""
     try:
-        # Read the CSV file
-        df = pd.read_csv(
-            os.path.join(DATA_DIR, 'kepler_koi.csv'),
-            comment='#',  # Skip comment lines starting with #
-            low_memory=False
-        )
+        df = pd.read_csv(os.path.join(DATA_DIR, 'kepler_koi.csv'), comment='#', low_memory=False)
         
-        # Filter out rows with missing critical data
-        df = df[df['koi_disposition'].notna()]
+        # Keep only complete rows
+        required_fields = ['kepoi_name', 'koi_disposition', 'koi_prad', 'koi_period']
+        df = df[df.apply(lambda row: is_complete_planet(row, required_fields), axis=1)]
         
-        # Transform to match frontend format
         transformed = []
         for _, row in df.iterrows():
-            # Extract discovery year from various date columns
-            year = extract_year_from_date(row.get('koi_vet_date'))
-            if not year:
-                # Fallback: estimate from KOI name or use default
-                year = 2011  # Kepler mission prime years
-            
-            # Normalize disposition names
+            year = extract_year_from_date(row.get('koi_vet_date')) or 2011
             disposition = str(row.get('koi_disposition', '')).upper()
-            if 'CONFIRMED' in disposition or disposition == 'CONFIRMED':
+            if 'CONFIRMED' in disposition:
                 disposition = 'CONFIRMED'
-            elif 'CANDIDATE' in disposition or disposition == 'CANDIDATE':
+            elif 'CANDIDATE' in disposition:
                 disposition = 'CANDIDATE'
-            elif 'FALSE' in disposition or disposition == 'FALSE POSITIVE':
+            elif 'FALSE' in disposition:
                 disposition = 'FALSE POSITIVE'
             else:
                 disposition = 'CANDIDATE'
@@ -187,37 +177,23 @@ def get_kepler_data():
             })
         
         return jsonify(transformed)
-    
     except FileNotFoundError:
-        return jsonify({
-            'error': 'Kepler data file not found',
-            'message': 'Please ensure kepler_koi.csv is in nasa-backend/data/'
-        }), 404
+        return jsonify({'error': 'Kepler data file not found'}), 404
     except Exception as e:
         print(f"❌ Error loading Kepler data: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/exoplanets/tess')
 def get_tess_data():
-    """Fetch TESS TOI data from CSV"""
     try:
-        df = pd.read_csv(
-            os.path.join(DATA_DIR, 'tess_toi.csv'),
-            comment='#',
-            low_memory=False
-        )
+        df = pd.read_csv(os.path.join(DATA_DIR, 'tess_toi.csv'), comment='#', low_memory=False)
         
-        # Filter out rows with missing critical data
-        df = df[df['tfopwg_disp'].notna()]
+        required_fields = ['toi', 'tfopwg_disp', 'pl_rade', 'pl_orbper']
+        df = df[df.apply(lambda row: is_complete_planet(row, required_fields), axis=1)]
         
         transformed = []
         for _, row in df.iterrows():
-            # Extract year from TOI creation date
-            year = extract_year_from_date(row.get('toi_created'))
-            if not year:
-                year = 2019  # TESS started discovering in 2018-2019
-            
-            # Normalize disposition
+            year = extract_year_from_date(row.get('toi_created')) or 2019
             disposition = str(row.get('tfopwg_disp', '')).upper()
             if disposition == 'CP':
                 disposition = 'CONFIRMED'
@@ -226,7 +202,7 @@ def get_tess_data():
             elif disposition == 'FP':
                 disposition = 'FALSE POSITIVE'
             elif disposition == 'KP':
-                disposition = 'CONFIRMED'  # Known Planet
+                disposition = 'CONFIRMED'
             else:
                 disposition = 'CANDIDATE'
             
@@ -249,39 +225,23 @@ def get_tess_data():
             })
         
         return jsonify(transformed)
-    
     except FileNotFoundError:
-        return jsonify({
-            'error': 'TESS data file not found',
-            'message': 'Please ensure tess_toi.csv is in nasa-backend/data/'
-        }), 404
+        return jsonify({'error': 'TESS data file not found'}), 404
     except Exception as e:
         print(f"❌ Error loading TESS data: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/exoplanets/k2')
 def get_k2_data():
-    """Fetch K2 Planets and Candidates data from CSV"""
     try:
-        df = pd.read_csv(
-            os.path.join(DATA_DIR, 'k2_candidates.csv'),
-            comment='#',
-            low_memory=False
-        )
+        df = pd.read_csv(os.path.join(DATA_DIR, 'k2_candidates.csv'), comment='#', low_memory=False)
         
-        # Filter out rows with missing critical data
-        df = df[df['disposition'].notna()]
+        required_fields = ['pl_name', 'disposition', 'pl_rade', 'pl_orbper']
+        df = df[df.apply(lambda row: is_complete_planet(row, required_fields), axis=1)]
         
         transformed = []
         for _, row in df.iterrows():
-            # Extract year from discovery year column
-            year = safe_float(row.get('disc_year'))
-            if not year or pd.isna(year):
-                year = 2015  # K2 mission years
-            else:
-                year = int(year)
-            
-            # Normalize disposition
+            year = safe_float(row.get('disc_year')) or 2015
             disposition = str(row.get('disposition', '')).upper()
             if 'CONFIRMED' in disposition:
                 disposition = 'CONFIRMED'
@@ -297,7 +257,7 @@ def get_k2_data():
                 'pl_name': str(row.get('pl_name', '')),
                 'k2_name': str(row.get('k2_name', '')),
                 'disposition': disposition,
-                'discovery_year': year,
+                'discovery_year': int(year),
                 'pl_orbper': safe_float(row.get('pl_orbper')),
                 'pl_rade': safe_float(row.get('pl_rade')),
                 'st_rad': safe_float(row.get('st_rad')),
@@ -311,21 +271,15 @@ def get_k2_data():
             })
         
         return jsonify(transformed)
-    
     except FileNotFoundError:
-        return jsonify({
-            'error': 'K2 data file not found',
-            'message': 'Please ensure k2_candidates.csv is in nasa-backend/data/'
-        }), 404
+        return jsonify({'error': 'K2 data file not found'}), 404
     except Exception as e:
         print(f"❌ Error loading K2 data: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/exoplanets/summary', methods=['GET'])
 def get_summary():
-    """Get summary statistics across all missions"""
     try:
-        # Load all data
         kepler = pd.read_csv(os.path.join(DATA_DIR, 'kepler_koi.csv'), comment='#')
         tess = pd.read_csv(os.path.join(DATA_DIR, 'tess_toi.csv'), comment='#')
         k2 = pd.read_csv(os.path.join(DATA_DIR, 'k2_candidates.csv'), comment='#')
@@ -350,163 +304,125 @@ def get_summary():
                 'false_positives': len(k2[k2['disposition'].str.contains('FALSE', na=False, case=False)])
             }
         }
-        
         return jsonify(summary)
-    
     except Exception as e:
         print(f"❌ Error generating summary: {e}")
         return jsonify({'error': str(e)}), 500
 
 def assign_planet_color(radius):
-    """Assign color based on planet size (Earth radii)"""
     if radius < 1.25:
-        return '#e74c3c'  # Rocky planets (red)
+        return '#e74c3c'
     elif radius < 2.0:
-        return '#3498db'  # Super-Earth (blue)
+        return '#3498db'
     elif radius < 6.0:
-        return '#9b59b6'  # Neptune-like (purple)
+        return '#9b59b6'
     elif radius < 12.0:
-        return '#f39c12'  # Jupiter-like (orange)
+        return '#f39c12'
     else:
-        return '#1abc9c'  # Large gas giant (teal)
+        return '#1abc9c'
 
 @app.route('/api/exoplanets/multi-planet-systems')
 def get_multi_planet_systems():
-    """Find multi-planet systems from Kepler and K2 CSV data"""
     try:
         systems = []
-        
-        # Process Kepler data
+
+        # Kepler
         try:
             kepler = pd.read_csv(os.path.join(DATA_DIR, 'kepler_koi.csv'), comment='#', low_memory=False)
-            kepler_confirmed = kepler[
-                kepler['koi_disposition'].str.contains('CONFIRMED', na=False, case=False)
-            ].copy()
+            kepler_confirmed = kepler[kepler['koi_disposition'].str.contains('CONFIRMED', na=False, case=False)].copy()
             
-            # Group by star (extract star ID from KOI name like K00001 from K00001.01)
             star_groups = {}
             for _, row in kepler_confirmed.iterrows():
-                kepoi_name = row.get('kepoi_name')
-                if pd.notna(kepoi_name) and isinstance(kepoi_name, str) and '.' in kepoi_name:
-                    star_id = kepoi_name.split('.')[0]
-                    if star_id not in star_groups:
-                        star_groups[star_id] = []
-                    star_groups[star_id].append(row)
+                if not is_complete_planet(row, ['kepoi_name', 'koi_prad', 'koi_period', 'koi_sma']):
+                    continue
+                kepoi_name = row['kepoi_name']
+                star_id = kepoi_name.split('.')[0]
+                star_groups.setdefault(star_id, []).append(row)
             
-            # Build multi-planet systems
             for star_id, planets_data in star_groups.items():
-                if len(planets_data) >= 2:  # Multi-planet system
+                if len(planets_data) >= 2:
                     planets = []
                     first_planet = planets_data[0]
-                    
-                    # Get system name
-                    kepler_name = first_planet.get('kepler_name')
-                    if pd.notna(kepler_name) and isinstance(kepler_name, str) and ' ' in kepler_name:
-                        system_name = kepler_name.rsplit(' ', 1)[0]
-                    else:
-                        system_name = star_id
-                    
+                    system_name = first_planet.get('kepler_name') or star_id
                     for planet in planets_data:
                         period = safe_float(planet.get('koi_period'))
                         radius = safe_float(planet.get('koi_prad'))
-                        sma = safe_float(planet.get('koi_sma'))  # Semi-major axis in AU
-                        
-                        if period and radius and sma:
-                            # Normalize distance for visualization
-                            distance = sma * 215  # Scale for visualization
-                            
-                            kepoi_name = planet.get('kepoi_name', '')
-                            planet_letter = kepoi_name.split('.')[-1] if '.' in str(kepoi_name) else str(len(planets) + 1)
-                            
-                            planets.append({
-                                'name': planet_letter,
-                                'distance': distance,
-                                'size': radius,
-                                'period': period,
-                                'mass': None,
-                                'color': assign_planet_color(radius)
-                            })
-                    
+                        sma = safe_float(planet.get('koi_sma'))
+                        if not all([period, radius, sma]):
+                            continue
+                        distance = sma * 215
+                        kepoi_name = planet.get('kepoi_name', '')
+                        planet_letter = kepoi_name.split('.')[-1] if '.' in kepoi_name else str(len(planets) + 1)
+                        planets.append({
+                            'name': planet_letter,
+                            'distance': distance,
+                            'size': radius,
+                            'period': period,
+                            'mass': None,
+                            'color': assign_planet_color(radius)
+                        })
                     if len(planets) >= 2:
                         systems.append({
                             'name': system_name,
                             'star_temp': safe_float(first_planet.get('koi_steff')) or 5778,
                             'star_radius': safe_float(first_planet.get('koi_srad')) or 1.0,
                             'planet_count': len(planets),
-                            'planets': sorted(planets, key=lambda p: p['distance'])[:8],  # Max 8 planets
+                            'planets': sorted(planets, key=lambda p: p['distance'])[:8],
                             'mission': 'Kepler'
                         })
         except FileNotFoundError:
             print("⚠️ Kepler CSV not found for multi-planet systems")
         except Exception as e:
             print(f"⚠️ Error processing Kepler data: {e}")
-        
-        # Process K2 data
+
+        # K2
         try:
             k2 = pd.read_csv(os.path.join(DATA_DIR, 'k2_candidates.csv'), comment='#', low_memory=False)
-            k2_confirmed = k2[
-                k2['disposition'].str.contains('CONFIRMED', na=False, case=False)
-            ].copy()
-            
-            # Group by hostname
+            k2_confirmed = k2[k2['disposition'].str.contains('CONFIRMED', na=False, case=False)].copy()
             if 'hostname' in k2_confirmed.columns:
                 for hostname in k2_confirmed['hostname'].dropna().unique():
                     star_planets = k2_confirmed[k2_confirmed['hostname'] == hostname]
-                    
-                    if len(star_planets) >= 2:
-                        planets = []
-                        
-                        for _, planet in star_planets.iterrows():
-                            period = safe_float(planet.get('pl_orbper'))
-                            radius = safe_float(planet.get('pl_rade'))
-                            sma = safe_float(planet.get('pl_orbsmax'))
-                            
-                            if period and radius and sma:
-                                distance = sma * 215
-                                letter = planet.get('pl_letter', str(len(planets) + 1))
-                                
-                                planets.append({
-                                    'name': letter if letter else str(len(planets) + 1),
-                                    'distance': distance,
-                                    'size': radius,
-                                    'period': period,
-                                    'mass': safe_float(planet.get('pl_masse')),
-                                    'color': assign_planet_color(radius)
-                                })
-                        
-                        if len(planets) >= 2:
-                            systems.append({
-                                'name': hostname,
-                                'star_temp': safe_float(star_planets.iloc[0].get('st_teff')) or 5778,
-                                'star_radius': safe_float(star_planets.iloc[0].get('st_rad')) or 1.0,
-                                'planet_count': len(planets),
-                                'planets': sorted(planets, key=lambda p: p['distance'])[:8],
-                                'mission': 'K2'
-                            })
+                    planets = []
+                    for _, planet in star_planets.iterrows():
+                        if not is_complete_planet(planet, ['pl_orbper', 'pl_rade', 'pl_orbsmax']):
+                            continue
+                        period = safe_float(planet.get('pl_orbper'))
+                        radius = safe_float(planet.get('pl_rade'))
+                        sma = safe_float(planet.get('pl_orbsmax'))
+                        distance = sma * 215
+                        letter = planet.get('pl_letter', str(len(planets) + 1))
+                        planets.append({
+                            'name': letter,
+                            'distance': distance,
+                            'size': radius,
+                            'period': period,
+                            'mass': safe_float(planet.get('pl_masse')),
+                            'color': assign_planet_color(radius)
+                        })
+                    if len(planets) >= 2:
+                        systems.append({
+                            'name': hostname,
+                            'star_temp': safe_float(star_planets.iloc[0].get('st_teff')) or 5778,
+                            'star_radius': safe_float(star_planets.iloc[0].get('st_rad')) or 1.0,
+                            'planet_count': len(planets),
+                            'planets': sorted(planets, key=lambda p: p['distance'])[:8],
+                            'mission': 'K2'
+                        })
         except FileNotFoundError:
             print("⚠️ K2 CSV not found for multi-planet systems")
         except Exception as e:
             print(f"⚠️ Error processing K2 data: {e}")
-        
-        # Remove duplicates and sort by planet count
+
         unique_systems = {sys['name']: sys for sys in systems}
-        sorted_systems = sorted(
-            unique_systems.values(), 
-            key=lambda s: s['planet_count'], 
-            reverse=True
-        )
-        
-        # Return top 20 systems
+        sorted_systems = sorted(unique_systems.values(), key=lambda s: s['planet_count'], reverse=True)
         print(f"✅ Found {len(sorted_systems)} multi-planet systems")
         return jsonify(sorted_systems[:20])
-    
     except Exception as e:
         print(f"❌ Error in multi-planet systems endpoint: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
