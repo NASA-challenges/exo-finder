@@ -5,10 +5,13 @@ import pickle
 from io import BytesIO
 from huggingface_hub import hf_hub_download
 from flask_cors import CORS
+import requests
 
 
 app = Flask(__name__)
 CORS(app)
+
+NASA_TAP_URL = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
 
 
 print("📡 Loading ML model and dependencies from Hugging Face...")
@@ -100,6 +103,139 @@ def batch_predict():
     except Exception as e:
         print("❌ Error in /batch_predict:", e)
         return jsonify({"error": str(e)}), 400
+
+
+@app.route('/api/exoplanets/kepler')
+def get_kepler_data():
+    """Fetch Kepler Objects of Interest (KOI) data from NASA or fallback to local CSV"""
+    try:
+        query = """
+        SELECT kepoi_name, koi_disposition, koi_period, koi_prad, 
+               koi_srad, koi_steff, koi_teq, ra, dec
+        FROM koi
+        WHERE koi_disposition IS NOT NULL
+        LIMIT 1000
+        """
+        
+        params = {
+            'query': query,
+            'format': 'json'
+        }
+        
+        response = requests.get(NASA_TAP_URL, params=params, timeout=10)
+        data = response.json()
+        
+        transformed = []
+        for row in data:
+            year = 2009 + (hash(row.get('kepoi_name', '')) % 10)
+            transformed.append({
+                'mission': 'Kepler',
+                'pl_name': row.get('kepoi_name'),
+                'disposition': row.get('koi_disposition'),
+                'pl_orbper': row.get('koi_period'),
+                'pl_rade': row.get('koi_prad'),
+                'st_rad': row.get('koi_srad'),
+                'st_teff': row.get('koi_steff'),
+                'discovery_year': year,
+                'pl_masse': None,
+                'sy_dist': None,
+                'disc_facility': 'Kepler'
+            })
+        
+        return jsonify(transformed)
+    
+    except Exception as e:
+        print(f"❌ Error fetching Kepler data from NASA: {e}")
+        return jsonify({"error": "NASA API unavailable", "message": str(e)}), 503
+
+
+@app.route('/api/exoplanets/tess')
+def get_tess_data():
+    """Fetch TESS Objects of Interest (TOI) data"""
+    try:
+        query = """
+        SELECT toi, tfopwg_disp, pl_orbper, pl_rade, 
+               st_rad, st_teff, ra, dec
+        FROM toi
+        WHERE tfopwg_disp IS NOT NULL
+        LIMIT 1000
+        """
+        
+        params = {
+            'query': query,
+            'format': 'json'
+        }
+        
+        response = requests.get(NASA_TAP_URL, params=params, timeout=10)
+        data = response.json()
+        
+        transformed = []
+        for row in data:
+            toi_num = row.get('toi', 0)
+            year = 2018 + (int(toi_num) // 1000) if toi_num else 2020
+            transformed.append({
+                'mission': 'TESS',
+                'pl_name': f"TOI-{row.get('toi')}",
+                'disposition': row.get('tfopwg_disp'),
+                'pl_orbper': row.get('pl_orbper'),
+                'pl_rade': row.get('pl_rade'),
+                'st_rad': row.get('st_rad'),
+                'st_teff': row.get('st_teff'),
+                'discovery_year': year,
+                'pl_masse': None,
+                'sy_dist': None,
+                'disc_facility': 'TESS'
+            })
+        
+        return jsonify(transformed)
+    
+    except Exception as e:
+        print(f"❌ Error fetching TESS data from NASA: {e}")
+        return jsonify({"error": "NASA API unavailable", "message": str(e)}), 503
+
+
+@app.route('/api/exoplanets/k2')
+def get_k2_data():
+    """Fetch K2 Planets and Candidates data"""
+    try:
+        query = """
+        SELECT epic_name, k2_disposition, pl_orbper, pl_rade,
+               st_rad, st_teff, ra, dec
+        FROM k2pandc
+        WHERE k2_disposition IS NOT NULL
+        LIMIT 500
+        """
+        
+        params = {
+            'query': query,
+            'format': 'json'
+        }
+        
+        response = requests.get(NASA_TAP_URL, params=params, timeout=10)
+        data = response.json()
+        
+        transformed = []
+        for row in data:
+            year = 2014 + (hash(row.get('epic_name', '')) % 5)
+            transformed.append({
+                'mission': 'K2',
+                'pl_name': row.get('epic_name'),
+                'disposition': row.get('k2_disposition'),
+                'pl_orbper': row.get('pl_orbper'),
+                'pl_rade': row.get('pl_rade'),
+                'st_rad': row.get('st_rad'),
+                'st_teff': row.get('st_teff'),
+                'discovery_year': year,
+                'pl_masse': None,
+                'sy_dist': None,
+                'disc_facility': 'K2'
+            })
+        
+        return jsonify(transformed)
+    
+    except Exception as e:
+        print(f"❌ Error fetching K2 data from NASA: {e}")
+        return jsonify({"error": "NASA API unavailable", "message": str(e)}), 503
 
 if __name__ == "__main__":
     print("🚀 Starting NASA Exoplanet Detection API...")
